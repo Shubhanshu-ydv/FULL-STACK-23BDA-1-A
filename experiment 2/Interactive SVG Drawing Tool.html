@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interactive SVG Drawing Tool</title>
+<style>
+  :root { --bg:#0f172a; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, Arial, sans-serif; background: var(--bg); color: var(--ink);
+    display: grid; grid-template-rows: auto 1fr; height: 100vh;
+  }
+  header {
+    background: var(--panel); border-bottom: 1px solid #1f2937;
+    display: grid; gap: .5rem; padding: .6rem .8rem;
+    grid-template-columns: repeat(5, max-content) 1fr repeat(6, max-content);
+    align-items: center; position: sticky; top: 0; z-index: 2;
+  }
+  header label, header button { font-size: 14px; }
+  header .sep { width:1px; height: 28px; background:#334155; margin:0 .4rem; }
+  button, select, input[type="number"], input[type="checkbox"] {
+    background:#0b1220; color:var(--ink); border:1px solid #334155; border-radius:8px; padding:.45rem .6rem;
+  }
+  button { cursor: pointer; }
+  button.active { outline:2px solid #22c55e; }
+  input[type="color"] { border: none; background: transparent; width: 36px; height: 36px; padding: 0; }
+  #stage {
+    background:#0b1020; width:100%; height:100%; position: relative; overflow: hidden;
+  }
+  svg { display:block; width:100%; height:100%; touch-action: none; }
+  .hud {
+    position:absolute; bottom:10px; left:10px; font-size:12px; color:var(--muted); background:#0b1220b3;
+    padding:.35rem .5rem; border:1px solid #334155; border-radius:6px; user-select:none;
+  }
+  .brand { font-weight:600; margin-right:.4rem; color:#93c5fd; }
+  @media (max-width: 720px) {
+    header { grid-template-columns: 1fr; grid-auto-flow: row; row-gap:.5rem; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <span class="brand">SVG Draw</span>
+
+    <button data-tool="pen" class="tool active" title="Pen (Freehand)">✏️ Pen</button>
+    <button data-tool="line" class="tool" title="Line">📏 Line</button>
+    <button data-tool="rect" class="tool" title="Rectangle">▭ Rect</button>
+    <button data-tool="circle" class="tool" title="Circle">◯ Circle</button>
+
+    <span class="sep"></span>
+
+    <label>Stroke&nbsp;<input id="strokeColor" type="color" value="#22c55e"></label>
+    <label>Width&nbsp;<input id="strokeWidth" type="number" min="1" max="40" step="1" value="3" style="width:70px"></label>
+    <label title="Toggle fill"><input id="fillToggle" type="checkbox"> Fill</label>
+
+    <span class="sep"></span>
+
+    <button id="undoBtn" title="Undo (Ctrl+Z)">⟲ Undo</button>
+    <button id="redoBtn" title="Redo (Ctrl+Shift+Z)">⟳ Redo</button>
+    <button id="clearBtn" title="Clear Canvas">🗑 Clear</button>
+    <button id="downloadBtn" title="Download SVG">⬇️ Download</button>
+  </header>
+
+  <div id="stage">
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg" aria-label="Drawing canvas">
+      <defs>
+        <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+          <path d="M32 0H0V32" fill="none" stroke="#1f2937" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#grid)"/>
+      <!-- Drawn shapes will be appended here -->
+      <g id="layer"></g>
+    </svg>
+    <div class="hud" id="hud">Tool: Pen • Stroke: #22c55e • Width: 3</div>
+  </div>
+
+<script>
+(() => {
+  const svg = document.getElementById('canvas');
+  const layer = document.getElementById('layer');
+  const hud = document.getElementById('hud');
+
+  const tools = Array.from(document.querySelectorAll('.tool'));
+  const strokeColor = document.getElementById('strokeColor');
+  const strokeWidth = document.getElementById('strokeWidth');
+  const fillToggle = document.getElementById('fillToggle');
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  let currentTool = 'pen';
+  let drawing = false;
+  let start = { x: 0, y: 0 };
+  let activeEl = null;
+
+  // History stacks for Undo/Redo
+  const undoStack = [];
+  const redoStack = [];
+  const pushHistory = () => {
+    redoStack.length = 0;
+    undoStack.push(layer.innerHTML);
+    updateUndoRedo();
+  };
+  const updateUndoRedo = () => {
+    undoBtn.disabled = undoStack.length === 0;
+    redoBtn.disabled = redoStack.length === 0;
+  };
+
+  // Utility: get mouse/touch position in SVG coordinates
+  function pointFromEvent(e) {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    return pt.matrixTransform(ctm.inverse());
+  }
+
+  // Tool switching
+  tools.forEach(btn => btn.addEventListener('click', () => {
+    tools.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTool = btn.dataset.tool;
+    updateHUD();
+  }));
+
+  // HUD text
+  function updateHUD() {
+    hud.textContent = `Tool: ${labelForTool(currentTool)} • Stroke: ${strokeColor.value} • Width: ${strokeWidth.value}${fillToggle.checked ? ' • Fill: on' : ''}`;
+  }
+  function labelForTool(t) {
+    return ({pen:'Pen', line:'Line', rect:'Rect', circle:'Circle'})[t] || t;
+  }
+  [strokeColor, strokeWidth, fillToggle].forEach(el => el.addEventListener('input', updateHUD));
+  updateHUD();
+
+  // Start drawing
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return; // left click only
+    const { x, y } = pointFromEvent(e);
+    drawing = true;
+    start = { x, y };
+    activeEl = createShape(currentTool, x, y);
+    if (activeEl) {
+      if (currentTool === 'pen') activeEl.setAttribute('d', `M ${x} ${y}`);
+      layer.appendChild(activeEl);
+    }
+    // Record state before the stroke for undo
+    pushHistory();
+    svg.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  // Drawing
+  svg.addEventListener('pointermove', (e) => {
+    if (!drawing || !activeEl) return;
+    const { x, y } = pointFromEvent(e);
+    switch (currentTool) {
+      case 'pen': {
+        const d = activeEl.getAttribute('d') + ` L ${x} ${y}`;
+        activeEl.setAttribute('d', d);
+        break;
+      }
+      case 'line': {
+        activeEl.setAttribute('x2', x);
+        activeEl.setAttribute('y2', y);
+        break;
+      }
+      case 'rect': {
+        const rx = Math.min(start.x, x);
+        const ry = Math.min(start.y, y);
+        const w = Math.abs(x - start.x);
+        const h = Math.abs(y - start.y);
+        activeEl.setAttribute('x', rx);
+        activeEl.setAttribute('y', ry);
+        activeEl.setAttribute('width', w);
+        activeEl.setAttribute('height', h);
+        break;
+      }
+      case 'circle': {
+        const dx = x - start.x;
+        const dy = y - start.y;
+        const r = Math.hypot(dx, dy);
+        activeEl.setAttribute('cx', start.x);
+        activeEl.setAttribute('cy', start.y);
+        activeEl.setAttribute('r', r);
+        break;
+      }
+    }
+  });
+
+  // Finish drawing
+  svg.addEventListener('pointerup', (e) => {
+    if (!drawing) return;
+    drawing = false;
+    activeEl = null;
+    svg.releasePointerCapture(e.pointerId);
+  });
+  svg.addEventListener('pointerleave', () => { drawing = false; activeEl = null; });
+
+  // Create shape with style
+  function createShape(tool, x, y) {
+    const commonStroke = strokeColor.value;
+    const commonWidth = Number(strokeWidth.value) || 1;
+    const fill = fillToggle.checked ? strokeColor.value + '30' : 'none'; // faint fill when enabled
+
+    switch (tool) {
+      case 'pen': {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', commonStroke);
+        path.setAttribute('stroke-width', commonWidth);
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        return path;
+      }
+      case 'line': {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x); line.setAttribute('y1', y);
+        line.setAttribute('x2', x); line.setAttribute('y2', y);
+        line.setAttribute('stroke', commonStroke);
+        line.setAttribute('stroke-width', commonWidth);
+        line.setAttribute('stroke-linecap', 'round');
+        return line;
+      }
+      case 'rect': {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x); rect.setAttribute('y', y);
+        rect.setAttribute('width', 0); rect.setAttribute('height', 0);
+        rect.setAttribute('fill', fill);
+        rect.setAttribute('stroke', commonStroke);
+        rect.setAttribute('stroke-width', commonWidth);
+        return rect;
+      }
+      case 'circle': {
+        const circ = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circ.setAttribute('cx', x); circ.setAttribute('cy', y);
+        circ.setAttribute('r', 0);
+        circ.setAttribute('fill', fill);
+        circ.setAttribute('stroke', commonStroke);
+        circ.setAttribute('stroke-width', commonWidth);
+        return circ;
+      }
+    }
+    return null;
+  }
+
+  // Undo/Redo/Clear
+  undoBtn.addEventListener('click', () => {
+    if (!undoStack.length) return;
+    const last = undoStack.pop();
+    redoStack.push(layer.innerHTML);
+    layer.innerHTML = last;
+    updateUndoRedo();
+  });
+
+  redoBtn.addEventListener('click', () => {
+    if (!redoStack.length) return;
+    const next = redoStack.pop();
+    undoStack.push(layer.innerHTML);
+    layer.innerHTML = next;
+    updateUndoRedo();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (!layer.innerHTML) return;
+    pushHistory();
+    layer.innerHTML = '';
+  });
+
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z
+  window.addEventListener('keydown', (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) redoBtn.click(); else undoBtn.click();
+    }
+  });
+
+  // Download SVG
+  downloadBtn.addEventListener('click', () => {
+    const clone = svg.cloneNode(true);
+    // remove HUD overlay and ensure proper XMLNS
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const serializer = new XMLSerializer();
+    const source = serializer.serializeToString(clone);
+    const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: 'drawing.svg' });
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // Initialize history (empty state)
+  updateUndoRedo();
+})();
+</script>
+</body>
+</html>

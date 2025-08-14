@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dynamic Product Filter</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        max-width: 800px;
+        margin: auto;
+    }
+    h1 {
+        text-align: center;
+    }
+    .filter-container {
+        margin-bottom: 20px;
+        text-align: center;
+    }
+    select {
+        padding: 8px;
+        font-size: 16px;
+    }
+    .product-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 15px;
+    }
+    .product {
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 10px;
+        text-align: center;
+        background: #fff;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .price {
+        color: green;
+        font-weight: bold;
+    }
+</style>
+</head>
+<body>
+
+<h1>Product List</h1>
+
+<div class="filter-container">
+    <label for="sort">Sort by:</label>
+    <select id="sort">
+        <option value="default">Default</option>
+        <option value="name-asc">Name (A → Z)</option>
+        <option value="name-desc">Name (Z → A)</option>
+        <option value="price-asc">Price (Low → High)</option>
+        <option value="price-desc">Price (High → Low)</option>
+    </select>
+</div>
+
+<div class="product-list" id="product-list">
+    <div class="product" data-name="Laptop" data-price="900">
+        <h3>Laptop</h3>
+        <p class="price">$900</p>
+    </div>
+    <div class="product" data-name="Headphones" data-price="100">
+        <h3>Headphones</h3>
+        <p class="price">$100</p>
+    </div>
+    <div class="product" data-name="Smartphone" data-price="600">
+        <h3>Smartphone</h3>
+        <p class="price">$600</p>
+    </div>
+    <div class="product" data-name="Camera" data-price="450">
+        <h3>Camera</h3>
+        <p class="price">$450</p>
+    </div>
+</div>
+
+<script>
+const sortSelect = document.getElementById('sort');
+const productList = document.getElementById('product-list');
+const products = Array.from(productList.children);
+
+sortSelect.addEventListener('change', () => {
+    let sortedProducts = [...products];
+
+    switch(sortSelect.value) {
+        case 'name-asc':
+            sortedProducts.sort((a, b) => a.dataset.name.localeCompare(b.dataset.name));
+            break;
+        case 'name-desc':
+            sortedProducts.sort((a, b) => b.dataset.name.localeCompare(a.dataset.name));
+            break;
+        case 'price-asc':
+            sortedProducts.sort((a, b) => a.dataset.price - b.dataset.price);
+            break;
+        case 'price-desc':
+            sortedProducts.sort((a, b) => b.dataset.price - a.dataset.price);
+            break;
+        default:
+            sortedProducts = products;
+    }
+
+    productList.innerHTML = '';
+    sortedProducts.forEach(product => productList.appendChild(product));
+});
+</script>
+
+</body>
+</html>
